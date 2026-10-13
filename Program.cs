@@ -50,11 +50,12 @@ namespace Ahmetview
         const int KapatBoyut = 40;
         const int KapatPay = 18;
 
-        // Fotoğrafın dışında kalan alanın koyuluğu (0 tam saydam, 255 siyah)
-        // ve sığdırırken fotoğrafla ekran kenarı arasında bırakılan pay;
-        // pay olmasa gölge ve dumanlı arka plan görünmüyordu.
+        // Fotoğrafın dışında kalan alanın koyuluğu (0 tam saydam, 255 siyah).
         const int ArkaKoyuluk = 110;
-        const int Kenar = 56;
+
+        // Büyük fotoğraf açılırken ekranın bu oranına sığdırılıyor: tamamına
+        // sığdırınca ekranı kaplıyor gibi duruyordu, dumanlı alan kalmıyordu.
+        const float AcilisOrani = 0.8f;
         const int GolgeGenislik = 24;
 
         // Tekerlek yana bastırılı tutulunca sürekli ileti gönderiyor;
@@ -244,8 +245,8 @@ namespace Ahmetview
             sigdir = true;
             if (resim != null)
             {
-                float s = Math.Min((float)(ClientSize.Width - 2 * Kenar) / resim.Width,
-                                   (float)(ClientSize.Height - 2 * Kenar) / resim.Height);
+                float s = Math.Min(ClientSize.Width * AcilisOrani / resim.Width,
+                                   ClientSize.Height * AcilisOrani / resim.Height);
                 // Küçük fotoğrafı büyütüp bulanıklaştırmıyoruz.
                 olcek = Math.Min(s, 1f);
                 Ortala();
@@ -341,10 +342,40 @@ namespace Ahmetview
                     else g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                     g.PixelOffsetMode = PixelOffsetMode.Half;
                     g.DrawImage(resim, alan);
+                    OranCiz(g);
                 }
                 KapatCiz(g);
             }
             Katman.Guncelle(this, tampon);
+        }
+
+        // En altta, ortada yarı saydam bir hap içinde yakınlaştırma oranı.
+        void OranCiz(Graphics g)
+        {
+            string yazi = "%" + Math.Round(olcek * 100);
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.Default;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            using (Font yaziTipi = new Font("Segoe UI", 12f, FontStyle.Bold))
+            {
+                SizeF olcu = g.MeasureString(yazi, yaziTipi);
+                float en = olcu.Width + 28, boy = olcu.Height + 10;
+                RectangleF hap = new RectangleF((ClientSize.Width - en) / 2f,
+                    ClientSize.Height - boy - 24, en, boy);
+                using (GraphicsPath yol = new GraphicsPath())
+                using (SolidBrush zemin = new SolidBrush(Color.FromArgb(160, 0, 0, 0)))
+                using (StringFormat bicim = new StringFormat())
+                {
+                    float c = boy;
+                    yol.AddArc(hap.Left, hap.Top, c, c, 90, 180);
+                    yol.AddArc(hap.Right - c, hap.Top, c, c, 270, 180);
+                    yol.CloseFigure();
+                    g.FillPath(zemin, yol);
+                    bicim.Alignment = StringAlignment.Center;
+                    bicim.LineAlignment = StringAlignment.Center;
+                    g.DrawString(yazi, yaziTipi, Brushes.White, hap, bicim);
+                }
+            }
         }
 
         Rectangle KapatAlani()
