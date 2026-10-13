@@ -45,29 +45,16 @@ namespace Ahmetview
         const int WM_MOUSEHWHEEL = 0x020E;
         const int ExifYon = 0x0112;
         const int WS_EX_LAYERED = 0x00080000;
-        const int WM_NCHITTEST = 0x0084;
-        const int WM_NCLBUTTONDOWN = 0x00A1;
-        const int HTCLIENT = 1, HTCAPTION = 2;
-        const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
-        const int HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
 
-        // Çerçeve olmadığı için kenardan bu kadar içeride tutunca pencere
-        // boyutlanıyor.
-        const int Tutamak = 8;
-
-        // Sağ üstteki kapatma düğmesi. Pay tutamaktan büyük ki düğmeye
-        // basmak yanlışlıkla boyutlandırmaya dönmesin.
+        // Sağ üstteki kapatma düğmesi.
         const int KapatBoyut = 40;
-        const int KapatPay = 14;
-
-        [DllImport("user32.dll")] static extern bool ReleaseCapture();
-        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr p, int ileti, IntPtr w, IntPtr l);
+        const int KapatPay = 18;
 
         // Fotoğrafın dışında kalan alanın koyuluğu (0 tam saydam, 255 siyah)
         // ve sığdırırken fotoğrafla ekran kenarı arasında bırakılan pay;
-        // pay olmasa gölge görünmüyordu.
+        // pay olmasa gölge ve dumanlı arka plan görünmüyordu.
         const int ArkaKoyuluk = 110;
-        const int Kenar = 32;
+        const int Kenar = 56;
         const int GolgeGenislik = 24;
 
         // Tekerlek yana bastırılı tutulunca sürekli ileti gönderiyor;
@@ -109,14 +96,10 @@ namespace Ahmetview
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
             FormBorderStyle = FormBorderStyle.None;
             AllowDrop = true;
-            MinimumSize = new Size(300, 200);
-            // Fare hangi ekrandaysa onun ortasında açılıyor; küçük ekranda
-            // ekrandan taşmasın.
+            // Fare hangi ekrandaysa onun tamamını kaplıyor: fotoğraf ortada,
+            // çevresi yarı saydam ve dumanlı.
             StartPosition = FormStartPosition.Manual;
-            Rectangle calisma = Screen.FromPoint(Cursor.Position).WorkingArea;
-            int en = Math.Min(1100, calisma.Width), boy = Math.Min(750, calisma.Height);
-            Bounds = new Rectangle(calisma.X + (calisma.Width - en) / 2,
-                                   calisma.Y + (calisma.Height - boy) / 2, en, boy);
+            Bounds = Screen.FromPoint(Cursor.Position).Bounds;
 
             // ContextMenuStrip özelliğine bağlanmıyor: o zaman sağ tuş
             // bırakılınca her seferinde açılıyor, sağ tuş + tekerlek ile
@@ -332,8 +315,7 @@ namespace Ahmetview
             using (Graphics g = Graphics.FromImage(tampon))
             {
                 // Arka plan tamamen saydam olsa tıklama pencereye değil
-                // arkadaki masaüstüne gider; hafif koyuluk pencereyi tutup
-                // taşımayı da mümkün kılıyor.
+                // arkadaki masaüstüne giderdi; hafif koyuluk bunu da önlüyor.
                 g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
                 if (resim == null)
                 {
@@ -426,18 +408,6 @@ namespace Ahmetview
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_NCHITTEST)
-            {
-                base.WndProc(ref m);
-                if ((int)m.Result == HTCLIENT)
-                {
-                    long l = (long)m.LParam;
-                    Point p = PointToClient(new Point((short)(l & 0xFFFF), (short)((l >> 16) & 0xFFFF)));
-                    int kenar = KenarBul(p);
-                    if (kenar != 0) m.Result = (IntPtr)kenar;
-                }
-                return;
-            }
             // Tekerleği sağa/sola yatırmak WinForms'ta olay olarak gelmiyor.
             if (m.Msg == WM_MOUSEHWHEEL)
             {
@@ -454,37 +424,14 @@ namespace Ahmetview
             base.WndProc(ref m);
         }
 
-        int KenarBul(Point p)
-        {
-            bool sol = p.X < Tutamak, sag = p.X >= ClientSize.Width - Tutamak;
-            bool ust = p.Y < Tutamak, alt = p.Y >= ClientSize.Height - Tutamak;
-            if (ust && sol) return HTTOPLEFT;
-            if (ust && sag) return HTTOPRIGHT;
-            if (alt && sol) return HTBOTTOMLEFT;
-            if (alt && sag) return HTBOTTOMRIGHT;
-            if (sol) return HTLEFT;
-            if (sag) return HTRIGHT;
-            if (ust) return HTTOP;
-            if (alt) return HTBOTTOM;
-            return 0;
-        }
-
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            // Farenin yan tuşları (geri/ileri) da aynı işi görsün.
             if (e.Button == MouseButtons.Left && KapatAlani().Contains(e.Location)) { Close(); return; }
+            // Farenin yan tuşları (geri/ileri) da aynı işi görsün.
             if (e.Button == MouseButtons.XButton1) { Gec(-1); return; }
             if (e.Button == MouseButtons.XButton2) { Gec(1); return; }
             if (e.Button == MouseButtons.Right) { sagTekerKullanildi = false; return; }
-            // Fotoğrafın dışındaki koyu alandan tutunca pencere taşınıyor:
-            // Windows'a başlık çubuğundan tutulmuş gibi bildiriyoruz.
-            if (e.Button == MouseButtons.Left && resim != null && !FotoAlani().Contains(e.Location))
-            {
-                ReleaseCapture();
-                SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
-                return;
-            }
             if (e.Button == MouseButtons.Left && resim != null)
             {
                 surukleniyor = true;

@@ -16,7 +16,7 @@ Windows için basit fotoğraf görüntüleyici. JPG, PNG ve WebP açar.
 
 ## Kullanım
 
-Pencerenin çerçevesi yok: fotoğrafın dışında kalan alan yarı saydam, arkası görünüyor.
+Ekranın tamamını kaplıyor: fotoğraf ortada, çevresi yarı saydam ve dumanlı, arkası görünüyor.
 
 | Ne | Nasıl |
 |---|---|
@@ -24,9 +24,7 @@ Pencerenin çerçevesi yok: fotoğrafın dışında kalan alan yarı saydam, ark
 | | Tekerleği yana yatır, farenin yan tuşları, ← → |
 | Yakınlaştır / uzaklaştır | Ctrl + tekerlek ya da sağ tuş basılıyken tekerlek |
 | Gerçek boyut / pencereye sığdır | Fotoğrafa çift tık (sırayla), Ctrl+1 / Ctrl+0 |
-| Fotoğrafı kaydır | Fotoğrafı sol tuşla sürükle |
-| Pencereyi taşı | Fotoğrafın dışındaki alandan sürükle |
-| Pencereyi boyutlandır | Kenarlardan çek |
+| Fotoğrafı kaydır | Sol tuşla sürükle |
 | Dosya aç | Ctrl+O, sürükle bırak ya da boş pencerede çift tık |
 | Kapat | Sağ üstteki çarpı ya da Esc |
 | Menü | Sağ tık |
