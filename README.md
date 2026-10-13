@@ -16,16 +16,20 @@ Windows için basit fotoğraf görüntüleyici. JPG, PNG ve WebP açar.
 
 ## Kullanım
 
+Pencerenin çerçevesi yok: fotoğrafın dışında kalan alan yarı saydam, arkası görünüyor.
+
 | Ne | Nasıl |
 |---|---|
 | Sonraki / önceki fotoğraf | Tekerleği çevir (aynı klasördeki fotoğraflar, Gezgin sırasıyla) |
 | | Tekerleği yana yatır, farenin yan tuşları, ← → |
-| Yakınlaştır / uzaklaştır | Ctrl + tekerlek (imlecin olduğu yere) |
-| Kaydır | Sol tuşla sürükle |
-| Pencereye sığdır | Çift tık ya da Ctrl+0 |
-| Gerçek boyut | Ctrl+1 |
+| Yakınlaştır / uzaklaştır | Ctrl + tekerlek ya da sağ tuş basılıyken tekerlek |
+| Gerçek boyut / pencereye sığdır | Fotoğrafa çift tık (sırayla), Ctrl+1 / Ctrl+0 |
+| Fotoğrafı kaydır | Fotoğrafı sol tuşla sürükle |
+| Pencereyi taşı | Fotoğrafın dışındaki alandan sürükle |
+| Pencereyi boyutlandır | Kenarlardan çek |
 | Dosya aç | Ctrl+O, sürükle bırak ya da boş pencerede çift tık |
-| Tam ekran | F11 (Esc çıkar) |
+| Kapat | Sağ üstteki çarpı ya da Esc |
+| Menü | Sağ tık |
 
 WebP için Windows'un "WebP Görüntü Uzantıları" gerekiyor; Windows 11'de hazır geliyor.
 

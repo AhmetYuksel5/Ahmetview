@@ -9,6 +9,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -42,6 +44,31 @@ namespace Ahmetview
     {
         const int WM_MOUSEHWHEEL = 0x020E;
         const int ExifYon = 0x0112;
+        const int WS_EX_LAYERED = 0x00080000;
+        const int WM_NCHITTEST = 0x0084;
+        const int WM_NCLBUTTONDOWN = 0x00A1;
+        const int HTCLIENT = 1, HTCAPTION = 2;
+        const int HTLEFT = 10, HTRIGHT = 11, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
+        const int HTBOTTOM = 15, HTBOTTOMLEFT = 16, HTBOTTOMRIGHT = 17;
+
+        // Çerçeve olmadığı için kenardan bu kadar içeride tutunca pencere
+        // boyutlanıyor.
+        const int Tutamak = 8;
+
+        // Sağ üstteki kapatma düğmesi. Pay tutamaktan büyük ki düğmeye
+        // basmak yanlışlıkla boyutlandırmaya dönmesin.
+        const int KapatBoyut = 40;
+        const int KapatPay = 14;
+
+        [DllImport("user32.dll")] static extern bool ReleaseCapture();
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr p, int ileti, IntPtr w, IntPtr l);
+
+        // Fotoğrafın dışında kalan alanın koyuluğu (0 tam saydam, 255 siyah)
+        // ve sığdırırken fotoğrafla ekran kenarı arasında bırakılan pay;
+        // pay olmasa gölge görünmüyordu.
+        const int ArkaKoyuluk = 110;
+        const int Kenar = 32;
+        const int GolgeGenislik = 24;
 
         // Tekerlek yana bastırılı tutulunca sürekli ileti gönderiyor;
         // bu aralık olmasa tek basışta birkaç fotoğraf birden geçiliyordu.
@@ -69,31 +96,54 @@ namespace Ahmetview
 
         int sonYanaGecis;
         int tekerBirikim;
-        bool tamEkran;
+        bool sagTekerKullanildi;
+        bool kapatUstunde;
+
+        Bitmap tampon;
+        readonly ContextMenuStrip menu = new ContextMenuStrip();
 
         public Pencere(string yol)
         {
             baslangic = yol;
             Text = "Ahmetview";
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
-            BackColor = Color.FromArgb(24, 24, 24);
-            ForeColor = Color.FromArgb(150, 150, 150);
-            DoubleBuffered = true;
+            FormBorderStyle = FormBorderStyle.None;
             AllowDrop = true;
-            StartPosition = FormStartPosition.CenterScreen;
-            Size = new Size(1100, 750);
             MinimumSize = new Size(300, 200);
+            // Fare hangi ekrandaysa onun ortasında açılıyor; küçük ekranda
+            // ekrandan taşmasın.
+            StartPosition = FormStartPosition.Manual;
+            Rectangle calisma = Screen.FromPoint(Cursor.Position).WorkingArea;
+            int en = Math.Min(1100, calisma.Width), boy = Math.Min(750, calisma.Height);
+            Bounds = new Rectangle(calisma.X + (calisma.Width - en) / 2,
+                                   calisma.Y + (calisma.Height - boy) / 2, en, boy);
 
-            ContextMenuStrip = new ContextMenuStrip();
-            ContextMenuStrip.Items.Add("Aç…  (Ctrl+O)", null, delegate { DosyaSec(); });
-            ContextMenuStrip.Items.Add("Varsayılan uygulama yap", null, delegate { Kayit.AyarlariAc(); });
+            // ContextMenuStrip özelliğine bağlanmıyor: o zaman sağ tuş
+            // bırakılınca her seferinde açılıyor, sağ tuş + tekerlek ile
+            // yakınlaştırdıktan sonra da.
+            menu.Items.Add("Aç…  (Ctrl+O)", null, delegate { DosyaSec(); });
+            menu.Items.Add("Varsayılan uygulama yap", null, delegate { Kayit.AyarlariAc(); });
+            menu.Items.Add("Kapat  (Esc)", null, delegate { Close(); });
+        }
+
+        // Katmanlı pencere: her pikselin kendi saydamlığı oluyor. WinForms'un
+        // Opacity'si fotoğrafı da soldururdu, TransparencyKey ise ya tam
+        // saydam ya hiç; yarı saydam arka plan ve gölge ancak böyle oluyor.
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= WS_EX_LAYERED;
+                return cp;
+            }
         }
 
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             Kayit.Kaydet();
-            if (baslangic != null) Ac(baslangic);
+            if (baslangic != null) Ac(baslangic); else Ciz();
             Kayit.IlkSefer(this);
         }
 
@@ -211,13 +261,13 @@ namespace Ahmetview
             sigdir = true;
             if (resim != null)
             {
-                float s = Math.Min((float)ClientSize.Width / resim.Width,
-                                   (float)ClientSize.Height / resim.Height);
+                float s = Math.Min((float)(ClientSize.Width - 2 * Kenar) / resim.Width,
+                                   (float)(ClientSize.Height - 2 * Kenar) / resim.Height);
                 // Küçük fotoğrafı büyütüp bulanıklaştırmıyoruz.
                 olcek = Math.Min(s, 1f);
                 Ortala();
             }
-            Invalidate();
+            Ciz();
         }
 
         void GercekBoyut()
@@ -227,7 +277,7 @@ namespace Ahmetview
             olcek = 1f;
             Ortala();
             Baslik();
-            Invalidate();
+            Ciz();
         }
 
         void Ortala()
@@ -247,7 +297,13 @@ namespace Ahmetview
             olcek = yeni;
             sigdir = false;
             Baslik();
-            Invalidate();
+            Ciz();
+        }
+
+        RectangleF FotoAlani()
+        {
+            if (resim == null) return RectangleF.Empty;
+            return new RectangleF(konum.X, konum.Y, resim.Width * olcek, resim.Height * olcek);
         }
 
         PointF PencereOrtasi()
@@ -258,30 +314,95 @@ namespace Ahmetview
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            if (sigdir) Sigdir(); else Invalidate();
+            if (sigdir) Sigdir(); else Ciz();
         }
 
         // ---- Çizim ----
 
-        protected override void OnPaint(PaintEventArgs e)
+        // Katmanlı pencerede WM_PAINT yok: her değişiklikte bütün pencere
+        // bir tampona çizilip Windows'a tek seferde veriliyor.
+        void Ciz()
         {
-            base.OnPaint(e);
-            Graphics g = e.Graphics;
-            if (resim == null)
+            if (!IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+            if (tampon == null || tampon.Size != ClientSize)
             {
-                string yazi = hata ?? "Bir fotoğrafı buraya sürükleyin ya da çift tıklayın";
-                TextRenderer.DrawText(g, yazi, Font, ClientRectangle, ForeColor,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
-                return;
+                if (tampon != null) tampon.Dispose();
+                tampon = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
             }
-            // Sürüklerken her karede yüksek kaliteli küçültme takılmaya yol
-            // açıyor; bıraktığında tekrar keskin çiziliyor.
-            if (olcek >= 3f) g.InterpolationMode = InterpolationMode.NearestNeighbor;
-            else if (surukleniyor) g.InterpolationMode = InterpolationMode.Bilinear;
-            else g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            g.PixelOffsetMode = PixelOffsetMode.Half;
-            g.DrawImage(resim, new RectangleF(konum.X, konum.Y,
-                resim.Width * olcek, resim.Height * olcek));
+            using (Graphics g = Graphics.FromImage(tampon))
+            {
+                // Arka plan tamamen saydam olsa tıklama pencereye değil
+                // arkadaki masaüstüne gider; hafif koyuluk pencereyi tutup
+                // taşımayı da mümkün kılıyor.
+                g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
+                if (resim == null)
+                {
+                    string yazi = hata ?? "Bir fotoğrafı buraya sürükleyin ya da çift tıklayın\nEsc kapatır";
+                    // ClearType saydam zeminde renkli kenar bırakıyor.
+                    g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                    using (Font yaziTipi = new Font("Segoe UI", 14f))
+                    using (StringFormat bicim = new StringFormat())
+                    {
+                        bicim.Alignment = StringAlignment.Center;
+                        bicim.LineAlignment = StringAlignment.Center;
+                        g.DrawString(yazi, yaziTipi, Brushes.WhiteSmoke, ClientRectangle, bicim);
+                    }
+                }
+                else
+                {
+                    RectangleF alan = FotoAlani();
+                    Golge(g, alan);
+                    // Sürüklerken her karede yüksek kaliteli küçültme takılmaya
+                    // yol açıyor; bıraktığında tekrar keskin çiziliyor.
+                    if (olcek >= 3f) g.InterpolationMode = InterpolationMode.NearestNeighbor;
+                    else if (surukleniyor) g.InterpolationMode = InterpolationMode.Bilinear;
+                    else g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.DrawImage(resim, alan);
+                }
+                KapatCiz(g);
+            }
+            Katman.Guncelle(this, tampon);
+        }
+
+        Rectangle KapatAlani()
+        {
+            return new Rectangle(ClientSize.Width - KapatPay - KapatBoyut, KapatPay, KapatBoyut, KapatBoyut);
+        }
+
+        void KapatCiz(Graphics g)
+        {
+            Rectangle k = KapatAlani();
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.Default;
+            Color zemin = kapatUstunde ? Color.FromArgb(230, 196, 43, 28) : Color.FromArgb(150, 0, 0, 0);
+            using (SolidBrush firca = new SolidBrush(zemin))
+                g.FillEllipse(firca, k);
+            using (Pen kalem = new Pen(Color.White, 3f))
+            {
+                kalem.StartCap = LineCap.Round;
+                kalem.EndCap = LineCap.Round;
+                int d = 13;
+                g.DrawLine(kalem, k.Left + d, k.Top + d, k.Right - d, k.Bottom - d);
+                g.DrawLine(kalem, k.Right - d, k.Top + d, k.Left + d, k.Bottom - d);
+            }
+        }
+
+        // Üst üste binen, gittikçe büyüyen soluk dikdörtgenler: fotoğrafa
+        // yakın yerde koyu, uzaklaştıkça açılan yumuşak bir gölge. Biraz
+        // aşağı kaydırılmış ki ışık yukarıdan geliyormuş gibi dursun.
+        static void Golge(Graphics g, RectangleF alan)
+        {
+            using (SolidBrush firca = new SolidBrush(Color.FromArgb(7, 0, 0, 0)))
+            {
+                for (int i = GolgeGenislik; i > 0; i--)
+                {
+                    RectangleF k = alan;
+                    k.Inflate(i, i);
+                    k.Offset(0, 6);
+                    g.FillRectangle(firca, k);
+                }
+            }
         }
 
         // ---- Fare ----
@@ -289,8 +410,10 @@ namespace Ahmetview
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             base.OnMouseWheel(e);
-            if ((ModifierKeys & Keys.Control) != 0)
+            bool sagBasili = (Control.MouseButtons & MouseButtons.Right) != 0;
+            if ((ModifierKeys & Keys.Control) != 0 || sagBasili)
             {
+                if (sagBasili) sagTekerKullanildi = true;
                 Yakinlas(Math.Pow(1.2, e.Delta / 120.0), e.Location);
                 return;
             }
@@ -303,6 +426,18 @@ namespace Ahmetview
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == WM_NCHITTEST)
+            {
+                base.WndProc(ref m);
+                if ((int)m.Result == HTCLIENT)
+                {
+                    long l = (long)m.LParam;
+                    Point p = PointToClient(new Point((short)(l & 0xFFFF), (short)((l >> 16) & 0xFFFF)));
+                    int kenar = KenarBul(p);
+                    if (kenar != 0) m.Result = (IntPtr)kenar;
+                }
+                return;
+            }
             // Tekerleği sağa/sola yatırmak WinForms'ta olay olarak gelmiyor.
             if (m.Msg == WM_MOUSEHWHEEL)
             {
@@ -319,12 +454,37 @@ namespace Ahmetview
             base.WndProc(ref m);
         }
 
+        int KenarBul(Point p)
+        {
+            bool sol = p.X < Tutamak, sag = p.X >= ClientSize.Width - Tutamak;
+            bool ust = p.Y < Tutamak, alt = p.Y >= ClientSize.Height - Tutamak;
+            if (ust && sol) return HTTOPLEFT;
+            if (ust && sag) return HTTOPRIGHT;
+            if (alt && sol) return HTBOTTOMLEFT;
+            if (alt && sag) return HTBOTTOMRIGHT;
+            if (sol) return HTLEFT;
+            if (sag) return HTRIGHT;
+            if (ust) return HTTOP;
+            if (alt) return HTBOTTOM;
+            return 0;
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             // Farenin yan tuşları (geri/ileri) da aynı işi görsün.
+            if (e.Button == MouseButtons.Left && KapatAlani().Contains(e.Location)) { Close(); return; }
             if (e.Button == MouseButtons.XButton1) { Gec(-1); return; }
             if (e.Button == MouseButtons.XButton2) { Gec(1); return; }
+            if (e.Button == MouseButtons.Right) { sagTekerKullanildi = false; return; }
+            // Fotoğrafın dışındaki koyu alandan tutunca pencere taşınıyor:
+            // Windows'a başlık çubuğundan tutulmuş gibi bildiriyoruz.
+            if (e.Button == MouseButtons.Left && resim != null && !FotoAlani().Contains(e.Location))
+            {
+                ReleaseCapture();
+                SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                return;
+            }
             if (e.Button == MouseButtons.Left && resim != null)
             {
                 surukleniyor = true;
@@ -337,27 +497,44 @@ namespace Ahmetview
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            bool ustunde = KapatAlani().Contains(e.Location);
+            if (ustunde != kapatUstunde) { kapatUstunde = ustunde; Ciz(); }
             if (!surukleniyor) return;
             konum = new PointF(suruklemeKonum.X + e.X - suruklemeFare.X,
                                suruklemeKonum.Y + e.Y - suruklemeFare.Y);
             sigdir = false;
-            Invalidate();
+            Ciz();
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            if (e.Button == MouseButtons.Right)
+            {
+                if (!sagTekerKullanildi) menu.Show(this, e.Location);
+                sagTekerKullanildi = false;
+                return;
+            }
             if (!surukleniyor) return;
             surukleniyor = false;
             Cursor = Cursors.Default;
-            Invalidate();
+            Ciz();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            if (kapatUstunde) { kapatUstunde = false; Ciz(); }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             base.OnMouseDoubleClick(e);
             if (e.Button != MouseButtons.Left) return;
+            // Sığdırılmışsa gerçek boyuta (tıklanan nokta yerinde kalarak),
+            // yakınlaştırılmışsa ilk görünüme.
             if (resim == null) DosyaSec();
+            else if (sigdir) Yakinlas(1.0 / olcek, e.Location);
             else Sigdir();
             Baslik();
         }
@@ -404,29 +581,74 @@ namespace Ahmetview
                 case Keys.Control | Keys.OemMinus:
                 case Keys.Control | Keys.Subtract:
                     Yakinlas(1 / 1.2, PencereOrtasi()); return true;
-                case Keys.F11:
-                    TamEkran(!tamEkran); return true;
                 case Keys.Escape:
-                    if (tamEkran) TamEkran(false); else Close();
-                    return true;
+                    Close(); return true;
             }
             return base.ProcessCmdKey(ref msg, tus);
-        }
-
-        void TamEkran(bool ac)
-        {
-            tamEkran = ac;
-            // Önce Normal'e almak gerekiyor; zaten büyütülmüş pencere
-            // çerçevesiz olunca görev çubuğunun üstünü kaplamıyor.
-            WindowState = FormWindowState.Normal;
-            FormBorderStyle = ac ? FormBorderStyle.None : FormBorderStyle.Sizable;
-            WindowState = ac ? FormWindowState.Maximized : FormWindowState.Normal;
         }
 
         protected override void Dispose(bool disposing)
         {
             if (disposing && resim != null) resim.Dispose();
+            if (disposing && tampon != null) tampon.Dispose();
             base.Dispose(disposing);
+        }
+    }
+
+    // Hazır çizilmiş 32 bit bir resmi katmanlı pencerenin görüntüsü yapmak.
+    static class Katman
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        struct Nokta { public int X, Y; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct Boyut { public int En, Boy; }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        struct Karisim { public byte Islem, Bayrak, SabitSaydamlik, AlfaBicimi; }
+
+        [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr pencere);
+        [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr pencere, IntPtr dc);
+        [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+        [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+        [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr nesne);
+        [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr nesne);
+        [DllImport("user32.dll")]
+        static extern bool UpdateLayeredWindow(IntPtr pencere, IntPtr hedefDc, ref Nokta hedef,
+            ref Boyut boyut, IntPtr kaynakDc, ref Nokta kaynak, int renkAnahtari,
+            ref Karisim karisim, int bayrak);
+
+        const int ULW_ALPHA = 2;
+        const byte AC_SRC_ALPHA = 1;
+
+        public static void Guncelle(Form pencere, Bitmap resim)
+        {
+            IntPtr ekranDc = GetDC(IntPtr.Zero);
+            IntPtr bellekDc = CreateCompatibleDC(ekranDc);
+            IntPtr hbmp = IntPtr.Zero, eski = IntPtr.Zero;
+            try
+            {
+                // GetHbitmap saydamlığı Windows'un beklediği ön-çarpılmış
+                // biçime çeviriyor.
+                hbmp = resim.GetHbitmap(Color.FromArgb(0));
+                eski = SelectObject(bellekDc, hbmp);
+                Nokta hedef = new Nokta { X = pencere.Left, Y = pencere.Top };
+                Nokta kaynak = new Nokta();
+                Boyut boyut = new Boyut { En = resim.Width, Boy = resim.Height };
+                Karisim karisim = new Karisim { SabitSaydamlik = 255, AlfaBicimi = AC_SRC_ALPHA };
+                UpdateLayeredWindow(pencere.Handle, ekranDc, ref hedef, ref boyut,
+                    bellekDc, ref kaynak, 0, ref karisim, ULW_ALPHA);
+            }
+            finally
+            {
+                if (hbmp != IntPtr.Zero)
+                {
+                    SelectObject(bellekDc, eski);
+                    DeleteObject(hbmp);
+                }
+                DeleteDC(bellekDc);
+                ReleaseDC(IntPtr.Zero, ekranDc);
+            }
         }
     }
 
