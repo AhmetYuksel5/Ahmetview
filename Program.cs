@@ -113,7 +113,27 @@ namespace Ahmetview
         bool sagTekerKullanildi;
         bool kapatUstunde;
 
-        Bitmap tampon;
+        Katman.Yuzey yuzey;
+
+        // Fotoğrafın ekrandaki boyutuna küçültülmüş hâli, gölgesiyle birlikte.
+        // Her çizimde tam çözünürlüklü fotoğrafı yeniden küçültmek sürüklerken
+        // takılmaya, önizlemeler yüklenirken de geçişlerin gecikmesine yol
+        // açıyordu; ölçek değişmedikçe bu hazır resim kaydırılıyor.
+        Bitmap gorunum;
+        Image gorunumKaynak;
+        float gorunumOlcek;
+        bool gorunumKaliteli;
+        bool gorunumVideo;
+        // Zum sırasında hızlı küçültülüyor, zum bitince kaliteliye geçiliyor.
+        readonly System.Windows.Forms.Timer kaliteZamani = new System.Windows.Forms.Timer();
+
+        // Şeridin kayma animasyonu: fotoğraf değişince şerit eski yerinden
+        // yenisine yumuşakça kayıyor.
+        float seritKayma, kaymaBaslangic;
+        int animBaslangic;
+        readonly System.Windows.Forms.Timer animZamani = new System.Windows.Forms.Timer();
+        const int AnimSure = 320;
+        readonly HashSet<string> gorunurKucukler = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Önizlemeler arka plandaki bir iş parçacığında hazırlanıyor: büyük
         // bir JPEG'i küçültmek onlarca milisaniye sürüyor, kalabalık bir
@@ -151,6 +171,30 @@ namespace Ahmetview
             menu.Items.Add("Varsayılan uygulama yap", null, delegate { Kayit.AyarlariAc(); });
             menu.Items.Add("Kapat  (Esc)", null, delegate { Close(); });
 
+            kaliteZamani.Interval = 150;
+            kaliteZamani.Tick += delegate
+            {
+                kaliteZamani.Stop();
+                Ciz();
+            };
+            animZamani.Interval = 15;
+            animZamani.Tick += delegate
+            {
+                float t = (Environment.TickCount - animBaslangic) / (float)AnimSure;
+                if (t >= 1f)
+                {
+                    seritKayma = 0;
+                    animZamani.Stop();
+                }
+                else
+                {
+                    // Yavaşlayarak duran kayma (kübik).
+                    float kalan = 1f - t;
+                    seritKayma = kaymaBaslangic * kalan * kalan * kalan;
+                }
+                Ciz();
+            };
+
             oranZamani.Interval = OranSuresi;
             oranZamani.Tick += delegate
             {
@@ -179,6 +223,7 @@ namespace Ahmetview
             // WebP çözücüsü (WPF) STA iş parçacığı istiyor.
             Thread isci = new Thread(IsciDongusu);
             isci.IsBackground = true;
+            isci.Priority = ThreadPriority.BelowNormal;
             isci.SetApartmentState(ApartmentState.STA);
             isci.Start();
 
@@ -249,7 +294,26 @@ namespace Ahmetview
         void Gec(int yon)
         {
             if (dosyalar.Count == 0) return;
-            sira = (sira + yon + dosyalar.Count) % dosyalar.Count;
+            SiraDegistir((sira + yon + dosyalar.Count) % dosyalar.Count);
+        }
+
+        void SiraDegistir(int yeni)
+        {
+            int fark = yeni - sira;
+            sira = yeni;
+            // Baştan sona sarmada şerit uzun yol kaymasın, olduğu yere atlasın.
+            if (fark != 0 && Math.Abs(fark) <= 3)
+            {
+                seritKayma += fark * (KucukEn + KucukAralik);
+                kaymaBaslangic = seritKayma;
+                animBaslangic = Environment.TickCount;
+                animZamani.Start();
+            }
+            else
+            {
+                seritKayma = 0;
+                animZamani.Stop();
+            }
             Yukle();
         }
 
@@ -415,6 +479,8 @@ namespace Ahmetview
                                merkez.Y - (merkez.Y - konum.Y) * k);
             olcek = yeni;
             sigdir = false;
+            kaliteZamani.Stop();
+            kaliteZamani.Start();
             Baslik();
             OranGoster();
         }
@@ -447,16 +513,16 @@ namespace Ahmetview
         // ---- Çizim ----
 
         // Katmanlı pencerede WM_PAINT yok: her değişiklikte bütün pencere
-        // bir tampona çizilip Windows'a tek seferde veriliyor.
+        // bir yüzeye çizilip Windows'a tek seferde veriliyor.
         void Ciz()
         {
             if (!IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-            if (tampon == null || tampon.Size != ClientSize)
+            if (yuzey == null || yuzey.En != ClientSize.Width || yuzey.Boy != ClientSize.Height)
             {
-                if (tampon != null) tampon.Dispose();
-                tampon = new Bitmap(ClientSize.Width, ClientSize.Height, PixelFormat.Format32bppArgb);
+                if (yuzey != null) yuzey.Dispose();
+                yuzey = new Katman.Yuzey(ClientSize.Width, ClientSize.Height);
             }
-            using (Graphics g = Graphics.FromImage(tampon))
+            using (Graphics g = Graphics.FromImage(yuzey.Resim))
             {
                 // Arka plan tamamen saydam olsa tıklama pencereye değil
                 // arkadaki masaüstüne giderdi; hafif koyuluk bunu da önlüyor.
@@ -476,26 +542,81 @@ namespace Ahmetview
                 }
                 else
                 {
-                    RectangleF alan = FotoAlani();
-                    Golge(g, alan);
-                    // Sürüklerken her karede yüksek kaliteli küçültme takılmaya
-                    // yol açıyor; bıraktığında tekrar keskin çiziliyor.
-                    if (olcek >= 3f) g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                    else if (surukleniyor) g.InterpolationMode = InterpolationMode.Bilinear;
-                    else g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    g.PixelOffsetMode = PixelOffsetMode.Half;
-                    // Videonun kendisi üstteki ayrı pencerede; burada yeri
-                    // siyahla dolduruluyor ki pencere yerleşirken boşluk görünmesin.
-                    if (video) g.FillRectangle(Brushes.Black, alan);
-                    else g.DrawImage(resim, alan);
+                    IcerikCiz(g);
                     SeritCiz(g);
                     OranCiz(g);
                 }
                 KapatCiz(g);
             }
-            Katman.Guncelle(this, tampon);
+            yuzey.Guncelle(this);
             if (video && oynatici != null)
                 oynatici.Yerlestir(RectangleToScreen(Rectangle.Round(FotoAlani())));
+        }
+
+        void IcerikCiz(Graphics g)
+        {
+            RectangleF alan = FotoAlani();
+            float en = icerikEn * olcek, boy = icerikBoy * olcek;
+            // Ekranın birkaç katından büyük bir önbellek belleği bitirir; o
+            // kadar yakınlaşınca yalnız ekranda görünen parça çiziliyor.
+            bool onbellekOlur = en * boy <= 3f * ClientSize.Width * ClientSize.Height
+                && en <= 3 * ClientSize.Width && boy <= 3 * ClientSize.Height;
+            if (onbellekOlur)
+            {
+                GorunumHazirla();
+                g.CompositingMode = CompositingMode.SourceOver;
+                // Piksel ölçüsüyle: DrawImageUnscaled ekran ölçeklendirmesi
+                // %100 değilse resmi DPI'ya göre büyütüyor.
+                g.DrawImage(gorunum, (int)Math.Round(alan.X) - GolgeGenislik,
+                    (int)Math.Round(alan.Y) - GolgeGenislik,
+                    new Rectangle(0, 0, gorunum.Width, gorunum.Height), GraphicsUnit.Pixel);
+                return;
+            }
+            RectangleF gorunen = RectangleF.Intersect(alan, ClientRectangle);
+            if (gorunen.Width <= 0 || gorunen.Height <= 0) return;
+            if (video)
+            {
+                g.FillRectangle(Brushes.Black, gorunen);
+                return;
+            }
+            RectangleF kaynak = new RectangleF((gorunen.X - alan.X) / olcek, (gorunen.Y - alan.Y) / olcek,
+                gorunen.Width / olcek, gorunen.Height / olcek);
+            g.InterpolationMode = olcek >= 3f || surukleniyor || kaliteZamani.Enabled
+                ? InterpolationMode.NearestNeighbor : InterpolationMode.HighQualityBilinear;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.DrawImage(resim, gorunen, kaynak, GraphicsUnit.Pixel);
+        }
+
+        // Ölçek ya da fotoğraf değiştiyse gölgeli önbelleği yeniden yap. Zum
+        // sürerken hızlı yöntemle; zum durunca kaliteZamani kaliteliye çeviriyor.
+        void GorunumHazirla()
+        {
+            bool hizli = kaliteZamani.Enabled;
+            if (gorunum != null && gorunumKaynak == resim && gorunumVideo == video
+                && gorunumOlcek == olcek && (gorunumKaliteli || hizli))
+                return;
+            int en = Math.Max(1, (int)Math.Round(icerikEn * olcek));
+            int boy = Math.Max(1, (int)Math.Round(icerikBoy * olcek));
+            if (gorunum != null) gorunum.Dispose();
+            gorunum = new Bitmap(en + 2 * GolgeGenislik, boy + 2 * GolgeGenislik + 6, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(gorunum))
+            {
+                Golge(g, new RectangleF(GolgeGenislik, GolgeGenislik, en, boy));
+                Rectangle hedef = new Rectangle(GolgeGenislik, GolgeGenislik, en, boy);
+                if (video) g.FillRectangle(Brushes.Black, hedef);
+                else
+                {
+                    g.InterpolationMode = olcek >= 3f ? InterpolationMode.NearestNeighbor
+                        : hizli ? InterpolationMode.Bilinear : InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.CompositingMode = CompositingMode.SourceCopy;
+                    g.DrawImage(resim, hedef);
+                }
+            }
+            gorunumKaynak = resim;
+            gorunumVideo = video;
+            gorunumOlcek = olcek;
+            gorunumKaliteli = !hizli;
         }
 
         static GraphicsPath Yuvarlak(RectangleF r, float yaricap)
@@ -510,8 +631,9 @@ namespace Ahmetview
             return yol;
         }
 
-        // Klasördeki fotoğrafların küçükleri. Açık olan hep tam ortada ve
-        // çerçeveli; klasörün başında ya da sonundaysa bir yan boş kalıyor.
+        // Klasördeki fotoğrafların küçükleri. Açık olan hep tam ortada, tam
+        // boyda ve çerçeveli; diğerleri %20 küçük ve soluk. Kayarken boy ve
+        // soluklık ortaya uzaklığa göre yumuşakça değişiyor.
         void SeritCiz(Graphics g)
         {
             seritKutulari.Clear();
@@ -527,11 +649,13 @@ namespace Ahmetview
             int en = sigan * adim - KucukAralik;
             int x0 = (ClientSize.Width - en) / 2;
             int y0 = ClientSize.Height - SeritAlt - KucukBoy;
+            float merkezX = ClientSize.Width / 2f, merkezY = y0 + KucukBoy / 2f;
             seritAlani = new Rectangle(x0 - 8, y0 - 8, en + 16, KucukBoy + 16);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.InterpolationMode = InterpolationMode.HighQualityBilinear;
             g.PixelOffsetMode = PixelOffsetMode.Half;
+            g.CompositingMode = CompositingMode.SourceOver;
             using (GraphicsPath yol = Yuvarlak(seritAlani, 12))
             using (SolidBrush zemin = new SolidBrush(Color.FromArgb(90, 0, 0, 0)))
                 g.FillPath(zemin, yol);
@@ -543,32 +667,54 @@ namespace Ahmetview
                 if (sira + d < n) KucukIste(dosyalar[sira + d]);
                 if (d > 0 && sira - d >= 0) KucukIste(dosyalar[sira - d]);
             }
-
-            using (SolidBrush bos = new SolidBrush(Color.FromArgb(40, 255, 255, 255)))
-            using (SolidBrush soluk = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
-            using (Pen cerceve = new Pen(Color.White, 2f))
+            lock (kilit)
             {
-                for (int j = 0; j < sigan; j++)
+                gorunurKucukler.Clear();
+                for (int i = Math.Max(0, sira - yarim - 1); i <= Math.Min(n - 1, sira + yarim + 1); i++)
+                    gorunurKucukler.Add(dosyalar[i]);
+            }
+
+            g.SetClip(seritAlani);
+            int kenar = yarim + 1 + (int)Math.Ceiling(Math.Abs(seritKayma) / adim);
+            using (SolidBrush bos = new SolidBrush(Color.FromArgb(40, 255, 255, 255)))
+            {
+                // Uzaktakiler önce: ortadaki en son çizilip üstte kalıyor.
+                for (int d = kenar; d >= 0; d--)
                 {
-                    int i = sira - yarim + j;
-                    if (i < 0 || i >= n) continue;
-                    Rectangle kutu = new Rectangle(x0 + j * adim, y0, KucukEn, KucukBoy);
-                    seritKutulari.Add(new KeyValuePair<int, Rectangle>(i, kutu));
-                    Bitmap k;
-                    lock (kilit) kucukler.TryGetValue(dosyalar[i], out k);
-                    using (GraphicsPath yol = Yuvarlak(kutu, 6))
+                    for (int yon = -1; yon <= 1; yon += 2)
                     {
-                        if (k != null) g.DrawImage(k, kutu);
-                        else g.FillPath(bos, yol);
-                        if (VideoMu(dosyalar[i])) OynatSimgesi(g, kutu);
-                        if (i == sira) g.DrawPath(cerceve, yol);
-                        else g.FillPath(soluk, yol);
+                        if (d == 0 && yon == 1) continue;
+                        int i = sira + d * yon;
+                        if (i < 0 || i >= n) continue;
+                        float cx = merkezX + (i - sira) * adim + seritKayma;
+                        float uzaklik = Math.Min(1f, Math.Abs(cx - merkezX) / adim);
+                        float olc = 1f - 0.2f * uzaklik;
+                        RectangleF kutu = new RectangleF(cx - KucukEn * olc / 2f, merkezY - KucukBoy * olc / 2f,
+                            KucukEn * olc, KucukBoy * olc);
+                        if (kutu.Right < seritAlani.Left || kutu.Left > seritAlani.Right) continue;
+                        seritKutulari.Add(new KeyValuePair<int, Rectangle>(i, Rectangle.Round(kutu)));
+
+                        Bitmap k;
+                        lock (kilit) kucukler.TryGetValue(dosyalar[i], out k);
+                        using (GraphicsPath yol = Yuvarlak(kutu, 6))
+                        {
+                            if (k != null) g.DrawImage(k, kutu);
+                            else g.FillPath(bos, yol);
+                            if (VideoMu(dosyalar[i])) OynatSimgesi(g, kutu);
+                            if (uzaklik > 0)
+                                using (SolidBrush soluk = new SolidBrush(Color.FromArgb((int)(120 * uzaklik), 0, 0, 0)))
+                                    g.FillPath(soluk, yol);
+                            if (uzaklik < 1)
+                                using (Pen cerceve = new Pen(Color.FromArgb((int)(255 * (1 - uzaklik)), 255, 255, 255), 2f))
+                                    g.DrawPath(cerceve, yol);
+                        }
                     }
                 }
             }
+            g.ResetClip();
         }
 
-        static void OynatSimgesi(Graphics g, Rectangle kutu)
+        static void OynatSimgesi(Graphics g, RectangleF kutu)
         {
             float cx = kutu.Left + kutu.Width / 2f, cy = kutu.Top + kutu.Height / 2f, r = kutu.Height / 6f;
             PointF[] ucgen = {
@@ -577,30 +723,25 @@ namespace Ahmetview
                 g.FillPolygon(beyaz, ucgen);
         }
 
-        // Yakınlaştırma oranı: küçük, yarı saydam ince bir kutuda, fotoğrafın
-        // hemen üstünde ortada. Yalnız zum değişince bir süre görünüyor.
+        // Yakınlaştırma oranı: ekranın tam ortasında, yarı saydam bir kutuda.
+        // Yalnız zum değişince bir süre görünüyor.
         void OranCiz(Graphics g)
         {
             if (!oranGorunur) return;
             string yazi = "%" + Math.Round(olcek * 100);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.Default;
+            g.CompositingMode = CompositingMode.SourceOver;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            using (Font yaziTipi = new Font("Segoe UI", 9f))
+            using (Font yaziTipi = new Font("Segoe UI", 18f))
             {
                 SizeF olcu = g.MeasureString(yazi, yaziTipi);
-                float en = olcu.Width + 14, boy = olcu.Height + 6;
-                RectangleF f = FotoAlani();
-                float x = f.Left + (f.Width - en) / 2f;
-                float y = f.Top - boy - 10;
-                // Fotoğraf ekranı aştıysa ekranın içinde kalsın.
-                x = Math.Max(10, Math.Min(x, ClientSize.Width - en - 10));
-                y = Math.Max(10, Math.Min(y, ClientSize.Height - boy - 10));
-                RectangleF kutu = new RectangleF(x, y, en, boy);
-                using (GraphicsPath yol = Yuvarlak(kutu, 6))
-                using (SolidBrush zemin = new SolidBrush(Color.FromArgb(45, 255, 255, 255)))
+                float en = olcu.Width + 28, boy = olcu.Height + 12;
+                RectangleF kutu = new RectangleF((ClientSize.Width - en) / 2f, (ClientSize.Height - boy) / 2f, en, boy);
+                using (GraphicsPath yol = Yuvarlak(kutu, 12))
+                using (SolidBrush zemin = new SolidBrush(Color.FromArgb(110, 0, 0, 0)))
                 using (Pen kenar = new Pen(Color.FromArgb(70, 255, 255, 255)))
-                using (SolidBrush yaziRengi = new SolidBrush(Color.FromArgb(235, 255, 255, 255)))
+                using (SolidBrush yaziRengi = new SolidBrush(Color.FromArgb(240, 255, 255, 255)))
                 using (StringFormat bicim = new StringFormat())
                 {
                     g.FillPath(zemin, yol);
@@ -653,8 +794,13 @@ namespace Ahmetview
                     // Açılamayan dosya için de boş kayıt düşülüyor ki her
                     // çizimde yeniden denenmesin.
                     Bitmap k = KucukYap(yol);
-                    lock (kilit) kucukler[yol] = k;
-                    CizIste();
+                    bool gorunur;
+                    lock (kilit)
+                    {
+                        kucukler[yol] = k;
+                        gorunur = gorunurKucukler.Contains(yol);
+                    }
+                    if (gorunur) CizIste();
                 }
             }
         }
@@ -868,8 +1014,7 @@ namespace Ahmetview
                 {
                     if (kutu.Value.Contains(e.Location) && kutu.Key != sira)
                     {
-                        sira = kutu.Key;
-                        Yukle();
+                        SiraDegistir(kutu.Key);
                         break;
                     }
                 }
@@ -997,7 +1142,9 @@ namespace Ahmetview
         protected override void Dispose(bool disposing)
         {
             if (disposing && resim != null) resim.Dispose();
-            if (disposing && tampon != null) tampon.Dispose();
+            if (disposing && yuzey != null) yuzey.Dispose();
+            if (disposing && gorunum != null) gorunum.Dispose();
+            if (disposing) { kaliteZamani.Dispose(); animZamani.Dispose(); }
             if (disposing) KucukleriTemizle();
             if (disposing) oranZamani.Dispose();
             base.Dispose(disposing);
@@ -1050,7 +1197,9 @@ namespace Ahmetview
         }
     }
 
-    // Hazır çizilmiş 32 bit bir resmi katmanlı pencerenin görüntüsü yapmak.
+    // Katmanlı pencerenin görüntüsü. Bellekte Windows'un doğrudan
+    // okuyabildiği bir resim (DIB) tutuluyor ve GDI+ ona doğrudan çiziyor:
+    // her karede resmi kopyalayıp çevirmek sürüklemeyi yavaşlatıyordu.
     static class Katman
     {
         [StructLayout(LayoutKind.Sequential)]
@@ -1062,12 +1211,23 @@ namespace Ahmetview
         [StructLayout(LayoutKind.Sequential, Pack = 1)]
         struct Karisim { public byte Islem, Bayrak, SabitSaydamlik, AlfaBicimi; }
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct BilgiBasligi
+        {
+            public int Boyut, En, Boy;
+            public short Duzlem, Bit;
+            public int Sikistirma, ResimBoyutu, YatayCozunurluk, DikeyCozunurluk, RenkSayisi, OnemliRenk;
+        }
+
         [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr pencere);
         [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr pencere, IntPtr dc);
         [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
         [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
         [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr nesne);
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr nesne);
+        [DllImport("gdi32.dll")]
+        static extern IntPtr CreateDIBSection(IntPtr dc, ref BilgiBasligi bilgi, int kullanim,
+            out IntPtr bitler, IntPtr bolum, int kayma);
         [DllImport("user32.dll")]
         static extern bool UpdateLayeredWindow(IntPtr pencere, IntPtr hedefDc, ref Nokta hedef,
             ref Boyut boyut, IntPtr kaynakDc, ref Nokta kaynak, int renkAnahtari,
@@ -1076,33 +1236,48 @@ namespace Ahmetview
         const int ULW_ALPHA = 2;
         const byte AC_SRC_ALPHA = 1;
 
-        public static void Guncelle(Form pencere, Bitmap resim)
+        public sealed class Yuzey : IDisposable
         {
-            IntPtr ekranDc = GetDC(IntPtr.Zero);
-            IntPtr bellekDc = CreateCompatibleDC(ekranDc);
-            IntPtr hbmp = IntPtr.Zero, eski = IntPtr.Zero;
-            try
+            public readonly int En, Boy;
+            // Ön-çarpılmış 32 bit: Windows'un katmanlı pencereden beklediği biçim.
+            public readonly Bitmap Resim;
+            readonly IntPtr dc, hbmp, eski;
+
+            public Yuzey(int en, int boy)
             {
-                // GetHbitmap saydamlığı Windows'un beklediği ön-çarpılmış
-                // biçime çeviriyor.
-                hbmp = resim.GetHbitmap(Color.FromArgb(0));
-                eski = SelectObject(bellekDc, hbmp);
+                En = en;
+                Boy = boy;
+                BilgiBasligi bilgi = new BilgiBasligi();
+                bilgi.Boyut = Marshal.SizeOf(typeof(BilgiBasligi));
+                bilgi.En = en;
+                bilgi.Boy = -boy;   // eksi: satırlar yukarıdan aşağı
+                bilgi.Duzlem = 1;
+                bilgi.Bit = 32;
+                IntPtr ekranDc = GetDC(IntPtr.Zero);
+                dc = CreateCompatibleDC(ekranDc);
+                ReleaseDC(IntPtr.Zero, ekranDc);
+                IntPtr bitler;
+                hbmp = CreateDIBSection(dc, ref bilgi, 0, out bitler, IntPtr.Zero, 0);
+                eski = SelectObject(dc, hbmp);
+                Resim = new Bitmap(en, boy, en * 4, PixelFormat.Format32bppPArgb, bitler);
+            }
+
+            public void Guncelle(Form pencere)
+            {
                 Nokta hedef = new Nokta { X = pencere.Left, Y = pencere.Top };
                 Nokta kaynak = new Nokta();
-                Boyut boyut = new Boyut { En = resim.Width, Boy = resim.Height };
+                Boyut boyut = new Boyut { En = En, Boy = Boy };
                 Karisim karisim = new Karisim { SabitSaydamlik = 255, AlfaBicimi = AC_SRC_ALPHA };
-                UpdateLayeredWindow(pencere.Handle, ekranDc, ref hedef, ref boyut,
-                    bellekDc, ref kaynak, 0, ref karisim, ULW_ALPHA);
+                UpdateLayeredWindow(pencere.Handle, IntPtr.Zero, ref hedef, ref boyut,
+                    dc, ref kaynak, 0, ref karisim, ULW_ALPHA);
             }
-            finally
+
+            public void Dispose()
             {
-                if (hbmp != IntPtr.Zero)
-                {
-                    SelectObject(bellekDc, eski);
-                    DeleteObject(hbmp);
-                }
-                DeleteDC(bellekDc);
-                ReleaseDC(IntPtr.Zero, ekranDc);
+                Resim.Dispose();
+                SelectObject(dc, eski);
+                DeleteObject(hbmp);
+                DeleteDC(dc);
             }
         }
     }
