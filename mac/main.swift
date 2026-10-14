@@ -947,7 +947,7 @@ final class OranGorunum: GecirgenGorunum {
 // Fotoğraf gibi davranıyor: köşesinde çarpı var, dışına tıklamak kapatıyor.
 final class TanitimGorunum: GecirgenGorunum {
     static let ozellikler: [(String, String, String)] = [
-        ("bolt.fill", "Hafif ve hızlı", "Tek uygulama, kurulum yok, birkaç megabayt. Anında açılır."),
+        ("bolt.fill", "Hafif ve hızlı", "Tek uygulama, kurulum yok, 1 MB'tan küçük. Anında açılır."),
         ("sparkles", "Modern görünüm", "Çerçevesiz pencere, buzlu cam arka plan, yumuşak geçişler."),
         ("computermouse.fill", "Her şey farede", "Tekerlek ya da iki parmak: sonraki, önceki. ⌘ ya da kıstırma: zum."),
         ("play.rectangle.fill", "Fotoğraf ve video", "JPG, PNG, WebP, HEIC, MP4 ve MOV."),

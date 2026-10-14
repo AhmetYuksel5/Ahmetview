@@ -29,7 +29,15 @@ jobs:
           tag_name: mac
           name: Ahmetview (Mac)
           body: |
-            Mac sürümü, derleme ${{ github.run_number }}.
+            Mac sürümü, derleme ${{ github.run_number }}. macOS 12 ve sonrası, Apple Silicon ve Intel.
+
+            **Uyarısız kurulum:** Terminal'e yapıştır:
+
+            ```
+            curl -L https://github.com/AhmetYuksel5/Ahmetview/releases/download/mac/Ahmetview-mac.zip -o /tmp/Ahmetview.zip && ditto -x -k /tmp/Ahmetview.zip /Applications && open /Applications/Ahmetview.app
+            ```
+
+            Tarayıcıyla indirirsen ilk açılışta macOS engelleyebilir: Sistem Ayarları → Gizlilik ve Güvenlik → "Yine de Aç".
 
             ${{ github.event.head_commit.message }}
           files: mac/yapi/Ahmetview-mac.zip
