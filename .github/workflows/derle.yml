@@ -3,11 +3,12 @@ name: Derle ve yayınla
 on:
   push:
     branches: ["main"]
-    # Mac sürümünün kendi iş akışı var; yalnız onu değiştiren gönderim
-    # yeni bir Windows sürümü çıkarmasın.
+    # Mac sürümünün kendi iş akışı var; yalnız onu (ya da yalnız README'yi)
+    # değiştiren gönderim yeni bir Windows sürümü çıkarmasın.
     paths-ignore:
       - "mac/**"
       - ".github/workflows/mac.yml"
+      - "README.md"
   workflow_dispatch:
 
 permissions:
