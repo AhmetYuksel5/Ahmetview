@@ -527,9 +527,10 @@ namespace Ahmetview
                 // Arka plan tamamen saydam olsa tıklama pencereye değil
                 // arkadaki masaüstüne giderdi; hafif koyuluk bunu da önlüyor.
                 g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
-                if (!IcerikVar)
+                // Boşken yazı yok; yalnız bir dosya açılamadıysa nedeni yazıyor.
+                if (!IcerikVar && hata != null)
                 {
-                    string yazi = hata ?? "Bir fotoğrafı buraya sürükleyin ya da çift tıklayın\nEsc kapatır";
+                    string yazi = hata;
                     // ClearType saydam zeminde renkli kenar bırakıyor.
                     g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
                     using (Font yaziTipi = new Font("Segoe UI", 14f))
@@ -540,7 +541,7 @@ namespace Ahmetview
                         g.DrawString(yazi, yaziTipi, Brushes.WhiteSmoke, ClientRectangle, bicim);
                     }
                 }
-                else
+                else if (IcerikVar)
                 {
                     IcerikCiz(g);
                     SeritCiz(g);
