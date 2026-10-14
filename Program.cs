@@ -528,6 +528,7 @@ namespace Ahmetview
                 // arkadaki masaüstüne giderdi; hafif koyuluk bunu da önlüyor.
                 g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
                 // Boşken tanıtım kartı; bir dosya açılamadıysa nedeni yazıyor.
+                tanitimAlani = RectangleF.Empty;
                 if (!IcerikVar && hata == null) TanitimCiz(g);
                 else if (!IcerikVar)
                 {
@@ -563,30 +564,28 @@ namespace Ahmetview
             { "\uE714", "Fotoğraf ve video", "JPG, PNG, WebP, MP4, MOV, MKV ve daha fazlası." },
         };
 
+        // Kartın ekrandaki yeri: çarpı onun köşesine konuyor, dışına
+        // tıklamak kapatıyor.
+        RectangleF tanitimAlani;
+
+        // Ölçüler 96 DPI için; ekran ölçeklendirmesi %100 değilse yazılar
+        // büyüyor, kart da onlarla birlikte büyüsün diye her şey k ile
+        // çarpılıyor ve açıklamaların genişliği ölçülüyor. Sabit ölçülerle
+        // açıklamalar taşıp alttaki satırın altında kalıyordu.
         void TanitimCiz(Graphics g)
         {
-            const float En = 560, Ic = 36, IkonBoy = 96, SatirBoy = 54;
+            float k = g.DpiX / 96f;
+            float ic = 36 * k, ikonBoy = 96 * k, sol = 48 * k, simgeYeri = 40 * k;
             int satir = Ozellikler.GetLength(0);
-            float boy = Ic + IkonBoy + 18 + 46 + 24 + 22 + satir * SatirBoy + 14 + 20 + Ic;
-            RectangleF kart = new RectangleF((ClientSize.Width - En) / 2f, (ClientSize.Height - boy) / 2f, En, boy);
 
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.Default;
             g.CompositingMode = CompositingMode.SourceOver;
-            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            using (GraphicsPath yol = Yuvarlak(kart, 20))
-            using (SolidBrush zemin = new SolidBrush(Color.FromArgb(150, 18, 18, 24)))
-            using (Pen kenar = new Pen(Color.FromArgb(50, 255, 255, 255)))
-            {
-                g.FillPath(zemin, yol);
-                g.DrawPath(kenar, yol);
-            }
-
-            float y = kart.Top + Ic;
-            IkonCiz(g, new RectangleF(kart.Left + (En - IkonBoy) / 2f, y, IkonBoy, IkonBoy));
-            y += IkonBoy + 18;
+            // Yarı saydam zeminde ızgaraya oturtulmuş yazı kırık görünüyordu.
+            g.TextRenderingHint = TextRenderingHint.AntiAlias;
 
             using (StringFormat orta = new StringFormat())
+            using (StringFormat tekSatir = new StringFormat(StringFormatFlags.NoWrap))
             using (Font baslik = new Font("Segoe UI Semibold", 26f))
             using (Font alt = new Font("Segoe UI", 11f))
             using (Font kalin = new Font("Segoe UI Semibold", 11f))
@@ -599,24 +598,51 @@ namespace Ahmetview
             using (SolidBrush vurgu = new SolidBrush(Color.FromArgb(255, 120, 170, 255)))
             {
                 orta.Alignment = StringAlignment.Center;
-                g.DrawString("Ahmetview", baslik, beyaz, new RectangleF(kart.Left, y, En, 46), orta);
-                y += 46;
-                g.DrawString("Windows için sade ve hızlı fotoğraf, video görüntüleyici", alt, gri,
-                    new RectangleF(kart.Left, y, En, 24), orta);
-                y += 24 + 22;
+                const string AltYazi = "Windows için sade ve hızlı fotoğraf, video görüntüleyici";
+                const string Ipucu = "Açmak için bir dosyayı buraya bırak ya da karta çift tıkla";
 
-                float sol = kart.Left + 56;
+                // Genişlik: en uzun satıra göre, en az 560.
+                float en = 560 * k;
+                en = Math.Max(en, g.MeasureString(AltYazi, alt).Width + 2 * ic);
+                float baslikBoy = g.MeasureString("Ahmetview", baslik).Height;
+                float altBoy = g.MeasureString(AltYazi, alt).Height;
+                float kalinBoy = g.MeasureString("Ag", kalin).Height;
+                float aciklamaBoy = g.MeasureString("Ag", aciklama).Height;
+                float ipucuBoy = g.MeasureString(Ipucu, ipucu).Height;
+                for (int i = 0; i < satir; i++)
+                    en = Math.Max(en, g.MeasureString(Ozellikler[i, 2], aciklama).Width + 2 * sol + simgeYeri);
+                float satirBoy = kalinBoy + aciklamaBoy + 12 * k;
+                float boy = ic + ikonBoy + 16 * k + baslikBoy + altBoy + 24 * k + satir * satirBoy + 12 * k + ipucuBoy + ic;
+
+                RectangleF kart = new RectangleF((ClientSize.Width - en) / 2f, (ClientSize.Height - boy) / 2f, en, boy);
+                tanitimAlani = kart;
+                using (GraphicsPath yol = Yuvarlak(kart, 20 * k))
+                using (SolidBrush zemin = new SolidBrush(Color.FromArgb(150, 18, 18, 24)))
+                using (Pen kenar = new Pen(Color.FromArgb(50, 255, 255, 255)))
+                {
+                    g.FillPath(zemin, yol);
+                    g.DrawPath(kenar, yol);
+                }
+
+                float y = kart.Top + ic;
+                IkonCiz(g, new RectangleF(kart.Left + (en - ikonBoy) / 2f, y, ikonBoy, ikonBoy));
+                y += ikonBoy + 16 * k;
+                g.DrawString("Ahmetview", baslik, beyaz, new RectangleF(kart.Left, y, en, baslikBoy), orta);
+                y += baslikBoy;
+                g.DrawString(AltYazi, alt, gri, new RectangleF(kart.Left, y, en, altBoy), orta);
+                y += altBoy + 24 * k;
+
+                float x = kart.Left + sol;
                 for (int i = 0; i < satir; i++)
                 {
-                    g.DrawString(Ozellikler[i, 0], simge, vurgu, sol, y + 2);
-                    g.DrawString(Ozellikler[i, 1], kalin, beyaz, sol + 40, y);
+                    g.DrawString(Ozellikler[i, 0], simge, vurgu, x, y + 2 * k);
+                    g.DrawString(Ozellikler[i, 1], kalin, beyaz, x + simgeYeri, y);
                     g.DrawString(Ozellikler[i, 2], aciklama, gri,
-                        new RectangleF(sol + 40, y + 22, En - 56 * 2 - 40, SatirBoy - 22));
-                    y += SatirBoy;
+                        new RectangleF(x + simgeYeri, y + kalinBoy, kart.Right - x - simgeYeri, aciklamaBoy), tekSatir);
+                    y += satirBoy;
                 }
-                y += 14;
-                g.DrawString("Açmak için bir dosyayı buraya bırak ya da çift tıkla", ipucu, soluk,
-                    new RectangleF(kart.Left, y, En, 20), orta);
+                y += 12 * k;
+                g.DrawString(Ipucu, ipucu, soluk, new RectangleF(kart.Left, y, en, ipucuBoy), orta);
             }
         }
 
@@ -998,14 +1024,15 @@ namespace Ahmetview
         Rectangle KapatAlani()
         {
             int x, y;
-            if (!IcerikVar)
+            // Dosya yokken tanıtım kartı fotoğraf gibi davranıyor.
+            RectangleF f = IcerikVar ? FotoAlani() : tanitimAlani;
+            if (f.IsEmpty)
             {
                 x = ClientSize.Width - KapatPay - KapatBoyut;
                 y = KapatPay;
             }
             else
             {
-                RectangleF f = FotoAlani();
                 x = (int)f.Right - KapatBoyut;
                 y = (int)f.Top - KapatBoyut - 10;
                 if (y < KapatPay)
@@ -1125,6 +1152,15 @@ namespace Ahmetview
             if (e.Button == MouseButtons.XButton1) { Gec(-1); return; }
             if (e.Button == MouseButtons.XButton2) { Gec(1); return; }
             if (e.Button == MouseButtons.Right) { sagTekerKullanildi = false; return; }
+            if (e.Button == MouseButtons.Left && !IcerikVar)
+            {
+                // Tanıtım kartının dışına tıklamak da kapatıyor.
+                disariBasildi = !tanitimAlani.IsEmpty && !tanitimAlani.Contains(e.Location);
+                basmaNoktasi = e.Location;
+                surukleniyor = true;
+                suruklemeFare = e.Location;
+                suruklemeKonum = konum;
+            }
             if (e.Button == MouseButtons.Left && IcerikVar)
             {
                 disariBasildi = !FotoAlani().Contains(e.Location);
