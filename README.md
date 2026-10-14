@@ -1,6 +1,6 @@
 # Ahmetview
 
-Windows için basit fotoğraf görüntüleyici. JPG, PNG ve WebP açar.
+Windows için basit fotoğraf ve video görüntüleyici. JPG, PNG, WebP ile MP4, MOV, M4V, WMV, AVI, MKV ve WebM açar.
 
 ## İndir
 
@@ -11,25 +11,29 @@ Windows için basit fotoğraf görüntüleyici. JPG, PNG ve WebP açar.
 2. Windows "bilgisayarınız korundu" derse: **Ek bilgi → Yine de çalıştır**
    (exe imzasız).
 3. İlk açılışta "varsayılan yapılsın mı?" sorusuna Evet de; Ayarlar'da .jpg, .jpeg,
-   .png ve .webp için Ahmetview'u seç. Windows bu son tıklamayı uygulamanın
+   .png, .webp ve istediğin video türleri için Ahmetview'u seç. Windows bu son tıklamayı uygulamanın
    kendisinin yapmasına izin vermiyor. Sonradan da sağ tık menüsünden yapılabilir.
 
 ## Kullanım
 
-Ekranın tamamını kaplıyor: fotoğraf ortada, çevresi yarı saydam ve dumanlı, arkası görünüyor.
+Ekranın tamamını kaplıyor: fotoğraf ortada, çevresi yarı saydam ve dumanlı. Altta
+klasördeki diğer fotoğrafların ve videoların önizleme şeridi var.
 
 | Ne | Nasıl |
 |---|---|
-| Sonraki / önceki fotoğraf | Tekerleği çevir (aynı klasördeki fotoğraflar, Gezgin sırasıyla) |
-| | Tekerleği yana yatır, farenin yan tuşları, ← → |
+| Sonraki / önceki | Tekerleği çevir (aynı klasör, Gezgin sırasıyla), ← →, farenin yan tuşları |
+| Başka bir dosyaya geç | Alttaki şeritte önizlemesine tıkla |
 | Yakınlaştır / uzaklaştır | Ctrl + tekerlek ya da sağ tuş basılıyken tekerlek |
-| Gerçek boyut / pencereye sığdır | Fotoğrafa çift tık (sırayla), Ctrl+1 / Ctrl+0 |
-| Fotoğrafı kaydır | Sol tuşla sürükle |
+| Gerçek boyut / ilk görünüm | Fotoğrafa çift tık (sırayla), Ctrl+1 / Ctrl+0 |
+| Kaydır | Sol tuşla sürükle |
+| Videoyu duraklat / devam | Videoya tıkla |
 | Dosya aç | Ctrl+O, sürükle bırak ya da boş pencerede çift tık |
-| Kapat | Sağ üstteki çarpı ya da Esc |
+| Kapat | Fotoğrafın köşesindeki çarpı, dumanlı alana tıklamak ya da Esc |
 | Menü | Sağ tık |
 
 WebP için Windows'un "WebP Görüntü Uzantıları" gerekiyor; Windows 11'de hazır geliyor.
+Videoyu Windows'un kendi oynatıcı bileşeni açıyor; WebM için Microsoft Store'dan
+"Web Media Extensions" gerekebilir.
 
 ## Kendin derlemek istersen
 
