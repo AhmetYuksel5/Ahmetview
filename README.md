@@ -24,11 +24,13 @@ klasördeki diğer fotoğrafların ve videoların önizleme şeridi var.
 | Sonraki / önceki | Tekerleği çevir (aynı klasör, Gezgin sırasıyla), ← →, farenin yan tuşları |
 | Başka bir dosyaya geç | Alttaki şeritte önizlemesine tıkla |
 | Yakınlaştır / uzaklaştır | Ctrl + tekerlek ya da sağ tuş basılıyken tekerlek |
-| Gerçek boyut / ilk görünüm | Fotoğrafa çift tık (sırayla), Ctrl+1 / Ctrl+0 |
-| Kaydır | Sol tuşla sürükle |
-| Videoyu duraklat / devam | Videoya tıkla |
+| Gerçek boyut / ilk görünüm | Çift tık (sırayla), Ctrl+1 / Ctrl+0 |
+| Kaydır | Sol tuşla sürükle (videoda da) |
+| Videoyu duraklat / devam | Videoya tıkla ya da alttaki düğme |
+| Videoda ileri / geri sar | Alttaki çubuğa tıkla ya da sürükle |
+| Videoyu çevir | Alttaki çevirme düğmesi (telefon videolarında kendiliğinden) |
 | Dosya aç | Ctrl+O, sürükle bırak ya da boş pencerede çift tık |
-| Kapat | Fotoğrafın köşesindeki çarpı, dumanlı alana tıklamak ya da Esc |
+| Kapat | Fotoğrafın sağ üstündeki çarpı, dumanlı alana tıklamak ya da Esc |
 | Menü | Sağ tık |
 
 WebP için Windows'un "WebP Görüntü Uzantıları" gerekiyor; Windows 11'de hazır geliyor.
