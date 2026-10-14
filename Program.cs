@@ -527,8 +527,9 @@ namespace Ahmetview
                 // Arka plan tamamen saydam olsa tıklama pencereye değil
                 // arkadaki masaüstüne giderdi; hafif koyuluk bunu da önlüyor.
                 g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
-                // Boşken yazı yok; yalnız bir dosya açılamadıysa nedeni yazıyor.
-                if (!IcerikVar && hata != null)
+                // Boşken tanıtım kartı; bir dosya açılamadıysa nedeni yazıyor.
+                if (!IcerikVar && hata == null) TanitimCiz(g);
+                else if (!IcerikVar)
                 {
                     string yazi = hata;
                     // ClearType saydam zeminde renkli kenar bırakıyor.
@@ -552,6 +553,105 @@ namespace Ahmetview
             yuzey.Guncelle(this);
             if (video && oynatici != null)
                 oynatici.Yerlestir(RectangleToScreen(Rectangle.Round(FotoAlani())));
+        }
+
+        // Dosyasız açılınca ortada duran kart: ne olduğu ve neden farklı olduğu.
+        static readonly string[,] Ozellikler = {
+            { "\uE945", "Hafif ve hızlı", "Tek dosya, kurulum yok, 100 KB'tan küçük. Anında açılır." },
+            { "\uE771", "Modern görünüm", "Çerçevesiz pencere, dumanlı arka plan, yumuşak geçişler." },
+            { "\uE8A3", "Her şey farede", "Tekerlek: sonraki, önceki. Ctrl ya da sağ tuşla tekerlek: zum." },
+            { "\uE714", "Fotoğraf ve video", "JPG, PNG, WebP, MP4, MOV, MKV ve daha fazlası." },
+        };
+
+        void TanitimCiz(Graphics g)
+        {
+            const float En = 560, Ic = 36, IkonBoy = 96, SatirBoy = 54;
+            int satir = Ozellikler.GetLength(0);
+            float boy = Ic + IkonBoy + 18 + 46 + 24 + 22 + satir * SatirBoy + 14 + 20 + Ic;
+            RectangleF kart = new RectangleF((ClientSize.Width - En) / 2f, (ClientSize.Height - boy) / 2f, En, boy);
+
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.PixelOffsetMode = PixelOffsetMode.Default;
+            g.CompositingMode = CompositingMode.SourceOver;
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            using (GraphicsPath yol = Yuvarlak(kart, 20))
+            using (SolidBrush zemin = new SolidBrush(Color.FromArgb(150, 18, 18, 24)))
+            using (Pen kenar = new Pen(Color.FromArgb(50, 255, 255, 255)))
+            {
+                g.FillPath(zemin, yol);
+                g.DrawPath(kenar, yol);
+            }
+
+            float y = kart.Top + Ic;
+            IkonCiz(g, new RectangleF(kart.Left + (En - IkonBoy) / 2f, y, IkonBoy, IkonBoy));
+            y += IkonBoy + 18;
+
+            using (StringFormat orta = new StringFormat())
+            using (Font baslik = new Font("Segoe UI Semibold", 26f))
+            using (Font alt = new Font("Segoe UI", 11f))
+            using (Font kalin = new Font("Segoe UI Semibold", 11f))
+            using (Font aciklama = new Font("Segoe UI", 10f))
+            using (Font simge = new Font("Segoe MDL2 Assets", 16f))
+            using (Font ipucu = new Font("Segoe UI", 9.5f))
+            using (SolidBrush beyaz = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
+            using (SolidBrush gri = new SolidBrush(Color.FromArgb(200, 255, 255, 255)))
+            using (SolidBrush soluk = new SolidBrush(Color.FromArgb(140, 255, 255, 255)))
+            using (SolidBrush vurgu = new SolidBrush(Color.FromArgb(255, 120, 170, 255)))
+            {
+                orta.Alignment = StringAlignment.Center;
+                g.DrawString("Ahmetview", baslik, beyaz, new RectangleF(kart.Left, y, En, 46), orta);
+                y += 46;
+                g.DrawString("Windows için sade ve hızlı fotoğraf, video görüntüleyici", alt, gri,
+                    new RectangleF(kart.Left, y, En, 24), orta);
+                y += 24 + 22;
+
+                float sol = kart.Left + 56;
+                for (int i = 0; i < satir; i++)
+                {
+                    g.DrawString(Ozellikler[i, 0], simge, vurgu, sol, y + 2);
+                    g.DrawString(Ozellikler[i, 1], kalin, beyaz, sol + 40, y);
+                    g.DrawString(Ozellikler[i, 2], aciklama, gri,
+                        new RectangleF(sol + 40, y + 22, En - 56 * 2 - 40, SatirBoy - 22));
+                    y += SatirBoy;
+                }
+                y += 14;
+                g.DrawString("Açmak için bir dosyayı buraya bırak ya da çift tıkla", ipucu, soluk,
+                    new RectangleF(kart.Left, y, En, 20), orta);
+            }
+        }
+
+        // Uygulamanın simgesi, kodla çizilmiş: ayrı bir resim dosyası taşımamak
+        // için. ahmetview.ico ile aynı tasarım.
+        static void IkonCiz(Graphics g, RectangleF r)
+        {
+            Func<float, float, PointF> P = delegate (float x, float y)
+            {
+                return new PointF(r.Left + x * r.Width, r.Top + y * r.Height);
+            };
+            using (GraphicsPath kose = Yuvarlak(r, r.Width * 0.22f))
+            {
+                using (LinearGradientBrush zemin = new LinearGradientBrush(r,
+                    Color.FromArgb(56, 140, 255), Color.FromArgb(140, 70, 240), 45f))
+                    g.FillPath(zemin, kose);
+
+                Region eskiKirpma = g.Clip;
+                g.SetClip(kose, CombineMode.Intersect);
+                using (SolidBrush gunes = new SolidBrush(Color.FromArgb(255, 206, 84)))
+                    g.FillEllipse(gunes, RectangleF.FromLTRB(P(0.62f, 0.20f).X, P(0.62f, 0.20f).Y,
+                        P(0.80f, 0.38f).X, P(0.80f, 0.38f).Y));
+                using (SolidBrush tepe = new SolidBrush(Color.FromArgb(150, 255, 255, 255)))
+                    g.FillPolygon(tepe, new[] { P(0.45f, 1f), P(0.72f, 0.52f), P(1f, 0.80f), P(1f, 1f) });
+                // A biçimli dağ: dış üçgen, bacak arası çentik ve iç üçgen;
+                // Alternate dolguda içteki üçgenler boşluk kalıyor.
+                using (GraphicsPath a = new GraphicsPath(FillMode.Alternate))
+                {
+                    a.AddPolygon(new[] { P(0.10f, 1f), P(0.42f, 0.20f), P(0.74f, 1f) });
+                    a.AddPolygon(new[] { P(0.33f, 1f), P(0.42f, 0.80f), P(0.51f, 1f) });
+                    a.AddPolygon(new[] { P(0.42f, 0.50f), P(0.36f, 0.68f), P(0.48f, 0.68f) });
+                    g.FillPath(Brushes.White, a);
+                }
+                g.Clip = eskiKirpma;
+            }
         }
 
         void IcerikCiz(Graphics g)
