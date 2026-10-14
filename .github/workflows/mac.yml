@@ -1,0 +1,37 @@
+name: Mac sürümünü derle ve yayınla
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "mac/**"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  derle:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Derle
+        run: mac/derle.sh ${{ github.run_number }}
+
+      # Hep aynı etiket ("mac"): indirme bağlantısı sürümden sürüme
+      # değişmesin, README'deki tek satırlık kurulum komutu hep son sürümü
+      # indirsin. "En son sürüm" Windows'ta kalıyor.
+      - name: Yayınla
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mac
+          name: Ahmetview (Mac)
+          body: |
+            Mac sürümü, derleme ${{ github.run_number }}.
+
+            ${{ github.event.head_commit.message }}
+          files: mac/yapi/Ahmetview-mac.zip
+          fail_on_unmatched_files: true
+          make_latest: false
