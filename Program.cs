@@ -339,7 +339,8 @@ namespace Ahmetview
 
         void DosyaSec()
         {
-            using (OpenFileDialog d = new OpenFileDialog())
+            // Tam ad: video için eklenen WPF de aynı adda bir pencere getiriyor.
+            using (System.Windows.Forms.OpenFileDialog d = new System.Windows.Forms.OpenFileDialog())
             {
                 d.Filter = "Fotoğraf ve videolar|*.jpg;*.jpeg;*.png;*.webp;*.mp4;*.m4v;*.mov;*.wmv;*.avi;*.mkv;*.webm";
                 if (d.ShowDialog(this) == DialogResult.OK) Ac(d.FileName);
