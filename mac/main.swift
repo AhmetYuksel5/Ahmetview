@@ -49,7 +49,17 @@ final class Temsilci: NSObject, NSApplicationDelegate {
         pencere = p
         sahne = s
         NSApp.activate(ignoringOtherApps: true)
-        if let u = bekleyen { s.ac(u) } else { s.yerlestir() }
+        if let u = bekleyen {
+            s.ac(u)
+        } else {
+            // Finder'dan çift tıklanan dosya bazen pencere açıldıktan hemen
+            // sonra geliyor; kart o arada bir an görünmesin diye biraz
+            // bekleniyor, dosya gelirse hiç gösterilmiyor.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                s.tanitimHazir = true
+                s.yerlestir()
+            }
+        }
         Varsayilan.ilkSefer()
     }
 
@@ -159,6 +169,7 @@ final class Sahne: NSView {
     var sigdir = true
     var hata: String?
     var yuklemeNo = 0
+    var tanitimHazir = false
 
     let bulanik = GecirgenBulanik()
     let karartma = GecirgenGorunum()
@@ -469,7 +480,8 @@ final class Sahne: NSView {
             videoKutu.layer?.shadowPath = CGPath(rect: videoKutu.bounds, transform: nil)
         }
 
-        tanitim.isHidden = icerikVar || hata != nil
+        // Kart yalnız hiç dosya istenmediyse; dosya yüklenirken görünmesin.
+        tanitim.isHidden = !tanitimHazir || icerikVar || hata != nil || !dosyalar.isEmpty
         if !tanitim.isHidden {
             let b = tanitim.boyut
             tanitim.frame = NSRect(x: (bounds.width - b.width) / 2, y: (bounds.height - b.height) / 2,

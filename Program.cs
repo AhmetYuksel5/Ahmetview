@@ -251,8 +251,10 @@ namespace Ahmetview
                 if (!sagTekerKullanildi) menu.Show(this, PointToClient(ekranda));
                 sagTekerKullanildi = false;
             };
-            Kayit.Kaydet();
+            // İlk görüntü açılan dosya olsun: kayıt işleri ondan sonra.
+            acildi = true;
             if (baslangic != null) Ac(baslangic); else Ciz();
+            Kayit.Kaydet();
             Kayit.IlkSefer(this);
         }
 
@@ -514,9 +516,13 @@ namespace Ahmetview
 
         // Katmanlı pencerede WM_PAINT yok: her değişiklikte bütün pencere
         // bir yüzeye çizilip Windows'a tek seferde veriliyor.
+        // Pencere gösterilirken boyutlanma bir çizim tetikliyor; o an dosya
+        // henüz yüklenmediği için tanıtım kartı bir an görünüyordu.
+        bool acildi;
+
         void Ciz()
         {
-            if (!IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+            if (!acildi || !IsHandleCreated || ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
             if (yuzey == null || yuzey.En != ClientSize.Width || yuzey.Boy != ClientSize.Height)
             {
                 if (yuzey != null) yuzey.Dispose();
@@ -529,7 +535,8 @@ namespace Ahmetview
                 g.Clear(Color.FromArgb(ArkaKoyuluk, 0, 0, 0));
                 // Boşken tanıtım kartı; bir dosya açılamadıysa nedeni yazıyor.
                 tanitimAlani = RectangleF.Empty;
-                if (!IcerikVar && hata == null) TanitimCiz(g);
+                // Kart yalnız hiç dosya istenmediyse.
+                if (!IcerikVar && hata == null && dosyalar.Count == 0) TanitimCiz(g);
                 else if (!IcerikVar)
                 {
                     string yazi = hata;
