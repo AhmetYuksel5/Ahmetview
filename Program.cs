@@ -6,6 +6,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Drawing;
 using System.Diagnostics;
 using System.Drawing.Drawing2D;
@@ -174,9 +175,16 @@ namespace Ahmetview
             // ContextMenuStrip özelliğine bağlanmıyor: o zaman sağ tuş
             // bırakılınca her seferinde açılıyor, sağ tuş + tekerlek ile
             // yakınlaştırdıktan sonra da.
-            menu.Items.Add("Aç…  (Ctrl+O)", null, delegate { DosyaSec(); });
-            menu.Items.Add("Varsayılan uygulama yap", null, delegate { Kayit.AyarlariAc(); });
+            ToolStripItem yolKopyala = menu.Items.Add("Kopyala (dosya yolu)  Ctrl+Shift+C", null, delegate { YoluKopyala(); });
+            ToolStripItem dosyaKopyala = menu.Items.Add("Kopyala (dosya)  Ctrl+C", null, delegate { DosyayiKopyala(); });
+            ToolStripItem silOge = menu.Items.Add("Sil  (Del)", null, delegate { Sil(); });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Kapat  (Esc)", null, delegate { Close(); });
+            menu.Opening += delegate
+            {
+                bool dosyaVar = AcikDosya != null;
+                yolKopyala.Enabled = dosyaKopyala.Enabled = silOge.Enabled = dosyaVar;
+            };
 
             kaliteZamani.Interval = 150;
             kaliteZamani.Tick += delegate
@@ -340,6 +348,56 @@ namespace Ahmetview
         static bool VideoMu(string yol)
         {
             return Array.IndexOf(VideoUzantilari, Path.GetExtension(yol).ToLowerInvariant()) >= 0;
+        }
+
+        string AcikDosya
+        {
+            get { return sira >= 0 && sira < dosyalar.Count ? dosyalar[sira] : null; }
+        }
+
+        void YoluKopyala()
+        {
+            string yol = AcikDosya;
+            if (yol == null) return;
+            try { Clipboard.SetText(yol); Duyur("Dosya yolu kopyalandı"); }
+            catch { Duyur("Panoya yazılamadı"); }
+        }
+
+        // Gezginde Ctrl+V ile yapıştırılabilsin diye dosyanın kendisi.
+        void DosyayiKopyala()
+        {
+            string yol = AcikDosya;
+            if (yol == null) return;
+            try
+            {
+                StringCollection liste = new StringCollection();
+                liste.Add(yol);
+                Clipboard.SetFileDropList(liste);
+                Duyur("Dosya kopyalandı");
+            }
+            catch { Duyur("Panoya yazılamadı"); }
+        }
+
+        // Kalıcı silmek yerine Geri Dönüşüm Kutusu: tek tuşla, onaysız
+        // siliniyor; yanlışlıkla basılırsa geri alınabilsin.
+        void Sil()
+        {
+            string yol = AcikDosya;
+            if (yol == null) return;
+            // Video açıkken dosya oynatıcıda açık kalıyor, silinemiyor.
+            if (oynatici != null) oynatici.Durdur();
+            if (!Kabuk.CopeAt(Handle, yol) || File.Exists(yol))
+            {
+                Yukle();
+                Duyur("Silinemedi");
+                return;
+            }
+            dosyalar.RemoveAt(sira);
+            if (sira >= dosyalar.Count) sira = dosyalar.Count - 1;
+            seritKayma = 0;
+            animZamani.Stop();
+            Yukle();
+            Duyur("Geri Dönüşüm Kutusu'na taşındı");
         }
 
         void Yukle()
@@ -1337,6 +1395,12 @@ namespace Ahmetview
                     Gec(1); return true;
                 case Keys.Control | Keys.O:
                     DosyaSec(); return true;
+                case Keys.Delete:
+                    Sil(); return true;
+                case Keys.Control | Keys.C:
+                    DosyayiKopyala(); return true;
+                case Keys.Control | Keys.Shift | Keys.C:
+                    YoluKopyala(); return true;
                 case Keys.Control | Keys.D0:
                 case Keys.Control | Keys.NumPad0:
                     Sigdir(); Baslik(); OranGoster(); return true;
@@ -1387,6 +1451,39 @@ namespace Ahmetview
             [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory oge);
 
         [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr nesne);
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        struct SHFILEOPSTRUCT
+        {
+            public IntPtr hwnd;
+            public uint wFunc;
+            public string pFrom;
+            public string pTo;
+            public ushort fFlags;
+            public bool fAnyOperationsAborted;
+            public IntPtr hNameMappings;
+            public string lpszProgressTitle;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        static extern int SHFileOperation(ref SHFILEOPSTRUCT islem);
+
+        const uint FO_DELETE = 3;
+        const ushort FOF_SILENT = 0x4, FOF_NOCONFIRMATION = 0x10, FOF_ALLOWUNDO = 0x40,
+            FOF_WANTNUKEWARNING = 0x4000;
+
+        // Geri Dönüşüm Kutusu olmayan sürücüde (ağ, USB) Windows kalıcı
+        // silmeden önce yine de soruyor: NUKEWARNING.
+        public static bool CopeAt(IntPtr pencere, string yol)
+        {
+            SHFILEOPSTRUCT islem = new SHFILEOPSTRUCT();
+            islem.hwnd = pencere;
+            islem.wFunc = FO_DELETE;
+            islem.pFrom = yol + "\0";      // liste çift sıfırla bitiyor
+            islem.fFlags = (ushort)(FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_WANTNUKEWARNING);
+            try { return SHFileOperation(ref islem) == 0 && !islem.fAnyOperationsAborted; }
+            catch { return false; }
+        }
 
         const int SIIGBF_BIGGERSIZEOK = 0x1;
         // Küçük resim yoksa simge vermesin; boş kutu simgeden iyi.

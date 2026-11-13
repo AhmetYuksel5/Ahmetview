@@ -32,6 +32,8 @@ klasördeki diğer fotoğrafların ve videoların önizleme şeridi var.
 | Videoda ileri / geri sar | Alttaki çubuğa tıkla ya da sürükle |
 | Videoyu çevir | Alttaki çevirme düğmesi (telefon videolarında kendiliğinden) |
 | Dosya aç | Ctrl+O, sürükle bırak ya da boş pencerede çift tık |
+| Sil (Geri Dönüşüm Kutusu) | Delete |
+| Dosyayı / dosya yolunu kopyala | Ctrl+C / Ctrl+Shift+C |
 | Kapat | Fotoğrafın sağ üstündeki çarpı, dumanlı alana tıklamak ya da Esc |
 | Menü | Sağ tık |
 
