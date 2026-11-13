@@ -64,6 +64,7 @@ namespace Ahmetview
         // Zum göstergesi bir değişiklikten sonra bu kadar görünüp kayboluyor.
         const int OranSuresi = 1200;
         const int DuyuruSuresi = 1800;
+        const int SiraSuresi = 1500;
 
         // Fotoğrafın dışında kalan alanın koyuluğu (0 tam saydam, 255 siyah).
         const int ArkaKoyuluk = 110;
@@ -158,6 +159,10 @@ namespace Ahmetview
         Point fare = new Point(-1, -1);
         int ustKucuk = -1;
         readonly System.Windows.Forms.Timer oranZamani = new System.Windows.Forms.Timer();
+        // Sıra numarası ("3 / 118") fotoğraf değişince bir süre açık
+        // küçüğün üstünde görünüyor.
+        bool siraGorunur;
+        readonly System.Windows.Forms.Timer siraZamani = new System.Windows.Forms.Timer();
         readonly ContextMenuStrip menu = new ContextMenuStrip();
 
         public Pencere(string yol)
@@ -210,6 +215,13 @@ namespace Ahmetview
                 Ciz();
             };
 
+            siraZamani.Interval = SiraSuresi;
+            siraZamani.Tick += delegate
+            {
+                siraZamani.Stop();
+                siraGorunur = false;
+                Ciz();
+            };
             oranZamani.Interval = OranSuresi;
             oranZamani.Tick += delegate
             {
@@ -306,6 +318,7 @@ namespace Ahmetview
                 sira = -1;
                 hata = ex.Message;
             }
+            SiraGoster();
             Yukle();
         }
 
@@ -337,6 +350,7 @@ namespace Ahmetview
                 seritKayma = 0;
                 animZamani.Stop();
             }
+            SiraGoster();
             Yukle();
         }
 
@@ -396,6 +410,7 @@ namespace Ahmetview
             if (sira >= dosyalar.Count) sira = dosyalar.Count - 1;
             seritKayma = 0;
             animZamani.Stop();
+            SiraGoster();
             Yukle();
             Duyur("Geri Dönüşüm Kutusu'na taşındı");
         }
@@ -556,6 +571,13 @@ namespace Ahmetview
             kaliteZamani.Start();
             Baslik();
             OranGoster();
+        }
+
+        void SiraGoster()
+        {
+            siraGorunur = true;
+            siraZamani.Stop();
+            siraZamani.Start();
         }
 
         void OranGoster()
@@ -941,15 +963,27 @@ namespace Ahmetview
             return bulunan;
         }
 
-        // Fare altındaki küçüğün dosya adı, küçüğün hemen üstünde.
+        // Fare altındaki küçüğün dosya adı ve fotoğraf değişince bir süre
+        // açık olanın sıra numarası; ikisi aynı küçükse tek etikette.
         void AdCiz(Graphics g)
         {
             ustKucuk = surukleniyor ? -1 : KucukBul(fare);
-            if (ustKucuk < 0) return;
+            string numara = (sira + 1) + " / " + dosyalar.Count;
+            if (ustKucuk >= 0)
+            {
+                string ad = Path.GetFileName(dosyalar[ustKucuk]);
+                if (ustKucuk == sira && siraGorunur) ad += "  \u00B7  " + numara;
+                Etiket(g, ustKucuk, ad);
+            }
+            if (siraGorunur && ustKucuk != sira) Etiket(g, sira, numara);
+        }
+
+        void Etiket(Graphics g, int hangi, string yazi)
+        {
             Rectangle kutu = Rectangle.Empty;
             foreach (KeyValuePair<int, Rectangle> k in seritKutulari)
-                if (k.Key == ustKucuk) kutu = k.Value;
-            string ad = Path.GetFileName(dosyalar[ustKucuk]);
+                if (k.Key == hangi) kutu = k.Value;
+            if (kutu.IsEmpty) return;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.PixelOffsetMode = PixelOffsetMode.Default;
             g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -959,7 +993,7 @@ namespace Ahmetview
                 bicim.Alignment = StringAlignment.Center;
                 bicim.LineAlignment = StringAlignment.Center;
                 bicim.Trimming = StringTrimming.EllipsisCharacter;
-                SizeF olcu = g.MeasureString(ad, yaziTipi);
+                SizeF olcu = g.MeasureString(yazi, yaziTipi);
                 // Uzun adlar sonu üç noktayla kesilsin, şeridi taşmasın.
                 float en = Math.Min(olcu.Width + 18, 360), boy = olcu.Height + 6;
                 float x = kutu.Left + kutu.Width / 2f - en / 2f;
@@ -970,7 +1004,7 @@ namespace Ahmetview
                 using (SolidBrush yaziRengi = new SolidBrush(Color.FromArgb(240, 255, 255, 255)))
                 {
                     g.FillPath(zemin, yol);
-                    g.DrawString(ad, yaziTipi, yaziRengi, alan, bicim);
+                    g.DrawString(yazi, yaziTipi, yaziRengi, alan, bicim);
                 }
             }
         }
@@ -1426,7 +1460,7 @@ namespace Ahmetview
             if (disposing && gorunum != null) gorunum.Dispose();
             if (disposing) { kaliteZamani.Dispose(); animZamani.Dispose(); }
             if (disposing) KucukleriTemizle();
-            if (disposing) oranZamani.Dispose();
+            if (disposing) { oranZamani.Dispose(); siraZamani.Dispose(); }
             base.Dispose(disposing);
         }
     }
